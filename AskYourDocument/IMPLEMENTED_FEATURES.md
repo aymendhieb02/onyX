@@ -172,11 +172,72 @@ This document lists all features that have been implemented from the UNIQUE_FEAT
   - **Poet**: Creative, metaphorical
 - **UI**: Dropdown in Settings panel
 
+### 1. **Visual Document Map (Heatmap)** ✅
+- **Status**: Fully Implemented
+- **Location**: `rag_pipeline.py` → `create_document_heatmap()`, `app.py` → Document Insights
+- **Features**:
+  - Tracks which document chunks are referenced most in questions
+  - Visual progress bars showing chunk usage frequency
+  - Shows top 5 most referenced sections
+  - Updates dynamically as you ask questions
+- **UI**: Expandable section in Document Insights dashboard
+
+### 22. **Document "Personality" Detection** ✅
+- **Status**: Fully Implemented
+- **Location**: `rag_pipeline.py` → `detect_document_personality()`
+- **Features**:
+  - Detects document tone (formal, casual, technical, etc.)
+  - Identifies formality level
+  - Determines writing style
+  - Identifies target audience
+  - Auto-adjusts response style to match document personality
+- **UI**: Displayed in Document Insights, auto-adjusts perspective
+
+### 6. **Sentiment Analysis** ✅ (Enhanced)
+- **Status**: Fully Implemented
+- **Location**: `rag_pipeline.py` → `analyze_sentiment()`
+- **Features**:
+  - Overall sentiment (positive/negative/neutral)
+  - Sentiment score (0-100)
+  - Emotional themes extraction
+  - Visual indicators with emojis
+- **UI**: Document Insights dashboard with metrics
+
+### 20. **Contextual Follow-ups (Clarifying Questions)** ✅
+- **Status**: Fully Implemented
+- **Location**: `rag_pipeline.py` → `ask_clarifying_question()`, `app.py` → Question processing
+- **Features**:
+  - Detects ambiguous questions
+  - Asks clarifying questions when needed
+  - User can confirm or proceed with original question
+  - Helps improve answer accuracy
+- **UI**: Warning message with action buttons
+
+### 21. **Document Quiz Mode** ✅
+- **Status**: Fully Implemented
+- **Location**: `rag_pipeline.py` → `generate_quiz_questions()`, `app.py` → Quiz interface
+- **Features**:
+  - Generates 5 multiple-choice questions from document
+  - 4 options per question (A, B, C, D)
+  - Correct answer identification
+  - Explanation for each answer
+  - Score calculation and results display
+- **UI**: Full quiz interface with submit and review
+
+### 16. **Drag & Drop Upload** ✅ (Enhanced)
+- **Status**: Fully Implemented
+- **Location**: `app.py` → File uploader
+- **Features**:
+  - Native Streamlit drag & drop support
+  - Enhanced help text mentioning drag & drop
+  - Visual feedback
+- **UI**: File uploader component
+
 ---
 
 ## 📊 Implementation Summary
 
-### Total Features Implemented: **15**
+### Total Features Implemented: **21**
 
 | Category | Implemented | Total | Percentage |
 |----------|-------------|-------|------------|
@@ -185,7 +246,7 @@ This document lists all features that have been implemented from the UNIQUE_FEAT
 | UI/UX Polish | 3 | 4 | 75% |
 | Advanced AI | 3 | 4 | 75% |
 | Outside the Box | 2 | 22 | 9% |
-| **TOTAL** | **15** | **42** | **36%** |
+| **TOTAL** | **21** | **42** | **50%** |
 
 ### Priority Features (All Implemented) ✅
 
@@ -204,6 +265,12 @@ This document lists all features that have been implemented from the UNIQUE_FEAT
 13. ✅ Dark Mode
 14. ✅ Chunking Visualization
 15. ✅ Markdown Support
+16. ✅ Visual Document Map (Heatmap)
+17. ✅ Document Personality Detection
+18. ✅ Sentiment Analysis
+19. ✅ Contextual Follow-ups
+20. ✅ Document Quiz Mode
+21. ✅ Drag & Drop Upload Enhancement
 
 ---
 

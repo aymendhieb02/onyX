@@ -32,6 +32,7 @@ class VectorStore:
                 name=collection_name,
                 metadata={"hnsw:space": "cosine"}
             )
+            self._total_chunks = 0  # Track total chunks for heatmap
         except Exception as e:
             # If there's a connection error (like tenant issues), try to reset the database
             if "tenant" in str(e).lower() or "could not connect" in str(e).lower():
@@ -86,6 +87,7 @@ class VectorStore:
             documents=texts,
             metadatas=metadatas
         )
+        self._total_chunks = len(chunks)  # Update total chunks count
 
     def search(self, query_embedding: List[float], n_results: int = 3) -> List[Dict]:
         """Search for similar chunks.

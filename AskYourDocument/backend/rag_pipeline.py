@@ -29,6 +29,7 @@ class RAGPipeline:
         self.provider = os.getenv("AI_PROVIDER", "groq").lower()  # Default to Groq (free)
         self.embedding_model = None
         self._local_embeddings_failed = False  # Flag to prevent infinite recursion
+        self._fallback_warning_shown = False  # Flag to prevent spam warnings
         
         # Initialize embedding model
         self._init_embeddings()
@@ -74,15 +75,17 @@ class RAGPipeline:
                     print(f"✅ Using local embeddings (sentence-transformers) on CPU")
                 except Exception as e:
                     error_msg = str(e)
-                    print(f"⚠️ Could not load local embeddings: {error_msg[:200]}")
-                    print("⚠️ This is likely a PyTorch version compatibility issue.")
-                    print("⚠️ Falling back to API-based embeddings (Groq)")
+                    if "meta tensor" in error_msg.lower() or "to_empty" in error_msg.lower():
+                        # Suppress detailed error for known PyTorch issue
+                        print("⚠️ Local embeddings unavailable (PyTorch compatibility issue)")
+                    else:
+                        print(f"⚠️ Could not load local embeddings: {error_msg[:100]}")
+                    print("✅ Using API-based embeddings")
                     self._local_embeddings_failed = True
                     # Disable local embeddings for this session
                     if self.provider == "local":
                         self.provider = "groq"
                     # Don't recursively call _init_embeddings - just use API embeddings
-                    print(f"✅ Using {self.provider} for embeddings (API-based)")
             else:
                 print("⚠️ sentence-transformers not installed. Install with: pip install sentence-transformers")
                 self._local_embeddings_failed = True
@@ -109,24 +112,49 @@ class RAGPipeline:
             # Local embeddings (sentence-transformers)
             return self.embedding_model.encode(text).tolist()
         
-        # API-based embeddings (using HuggingFace Inference API - free!)
-        try:
-            api_url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
-            headers = {"Authorization": f"Bearer {os.getenv('HUGGINGFACE_API_KEY', '')}"}
-            response = requests.post(
-                api_url,
-                headers=headers,
-                json={"inputs": text, "options": {"wait_for_model": True}}
-            )
-            if response.status_code == 200:
-                return response.json()[0]
-            else:
-                # Fallback: use a simple hash-based embedding (not great but works)
-                print("⚠️ Using fallback embeddings")
-                return self._simple_embedding(text)
-        except Exception as e:
-            print(f"⚠️ Error getting embedding: {e}")
-            return self._simple_embedding(text)
+        # Try Groq API for embeddings first (if available)
+        groq_api_key = os.getenv('GROQ_API_KEY', '')
+        if groq_api_key and self.provider == "groq":
+            try:
+                # Use Groq's embedding API
+                api_url = "https://api.groq.com/openai/v1/embeddings"
+                headers = {
+                    "Authorization": f"Bearer {groq_api_key}",
+                    "Content-Type": "application/json"
+                }
+                response = requests.post(
+                    api_url,
+                    headers=headers,
+                    json={"model": "text-embedding-3-small", "input": text},
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    return response.json()["data"][0]["embedding"]
+            except Exception:
+                pass  # Fall through to HuggingFace or fallback
+        
+        # Try HuggingFace Inference API as fallback
+        huggingface_key = os.getenv('HUGGINGFACE_API_KEY', '')
+        if huggingface_key:
+            try:
+                api_url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
+                headers = {"Authorization": f"Bearer {huggingface_key}"}
+                response = requests.post(
+                    api_url,
+                    headers=headers,
+                    json={"inputs": text, "options": {"wait_for_model": True}},
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    return response.json()[0]
+            except Exception:
+                pass  # Fall through to simple embedding
+        
+        # Final fallback: use a simple hash-based embedding
+        if not self._fallback_warning_shown:
+            print("⚠️ Using fallback embeddings (API unavailable or rate-limited)")
+            self._fallback_warning_shown = True
+        return self._simple_embedding(text)
 
     def _simple_embedding(self, text: str) -> List[float]:
         """Simple fallback embedding (not great but works for testing)."""
@@ -812,3 +840,244 @@ Format as a simple list, one question per line."""
             }
         except:
             return {"total_chunks": 0, "chunk_size": 1500, "chunk_overlap": 300}
+    
+    def detect_document_personality(self, text: str) -> Dict:
+        """Detect document tone/personality and return style information.
+        
+        Args:
+            text: Document text to analyze.
+            
+        Returns:
+            Dictionary with personality traits (tone, formality, style).
+        """
+        # Sample text for analysis
+        sample_text = text[:2000] if len(text) > 2000 else text
+        
+        prompt = f"""Analyze this document and determine its personality/style:
+
+Document sample:
+{sample_text[:1000]}
+
+Determine:
+1. Tone: formal, casual, technical, friendly, academic, etc.
+2. Formality level: very formal, formal, neutral, casual, very casual
+3. Writing style: descriptive, narrative, instructional, analytical, etc.
+4. Target audience: general public, experts, students, professionals, etc.
+
+Format your response as:
+TONE: [tone]
+FORMALITY: [level]
+STYLE: [style]
+AUDIENCE: [audience]"""
+
+        try:
+            response = self._get_chat_response(prompt)
+            
+            # Parse response
+            personality = {
+                "tone": "neutral",
+                "formality": "neutral",
+                "style": "descriptive",
+                "audience": "general"
+            }
+            
+            for line in response.split('\n'):
+                line = line.strip()
+                if 'TONE:' in line.upper():
+                    personality["tone"] = line.split(':', 1)[1].strip() if ':' in line else "neutral"
+                elif 'FORMALITY:' in line.upper():
+                    personality["formality"] = line.split(':', 1)[1].strip() if ':' in line else "neutral"
+                elif 'STYLE:' in line.upper():
+                    personality["style"] = line.split(':', 1)[1].strip() if ':' in line else "descriptive"
+                elif 'AUDIENCE:' in line.upper():
+                    personality["audience"] = line.split(':', 1)[1].strip() if ':' in line else "general"
+            
+            return personality
+        except Exception as e:
+            print(f"Error detecting document personality: {e}")
+            return {"tone": "neutral", "formality": "neutral", "style": "descriptive", "audience": "general"}
+    
+    def ask_clarifying_question(self, question: str, relevant_chunks: List[Dict]) -> Optional[str]:
+        """Ask a clarifying question if the user's question is ambiguous.
+        
+        Args:
+            question: User's question.
+            relevant_chunks: Chunks found for the question.
+            
+        Returns:
+            Clarifying question if needed, None otherwise.
+        """
+        # Check if question is ambiguous
+        question_lower = question.lower()
+        ambiguous_indicators = ['this', 'that', 'it', 'they', 'them', 'those', 'these']
+        has_ambiguous_ref = any(indicator in question_lower for indicator in ambiguous_indicators)
+        
+        # Check if multiple topics might match
+        if len(relevant_chunks) > 10:  # Too many chunks might indicate ambiguity
+            prompt = f"""The user asked: "{question}"
+
+I found {len(relevant_chunks)} potentially relevant sections, which suggests the question might be ambiguous.
+
+Generate ONE clarifying question to help narrow down what the user wants to know. 
+If the question is clear, respond with "CLEAR".
+
+Clarifying question (or "CLEAR"):"""
+
+            try:
+                response = self._get_chat_response(prompt)
+                if "CLEAR" not in response.upper() and len(response.strip()) > 10:
+                    return response.strip()
+            except:
+                pass
+        
+        return None
+    
+    def generate_quiz_questions(self, text: str, num_questions: int = 5) -> List[Dict]:
+        """Generate quiz questions from the document.
+        
+        Args:
+            text: Document text.
+            num_questions: Number of quiz questions to generate.
+            
+        Returns:
+            List of quiz questions with answers.
+        """
+        sample_text = text[:3000] if len(text) > 3000 else text
+        
+        prompt = f"""Generate {num_questions} quiz questions based on this document:
+
+Document:
+{sample_text}
+
+For each question, provide:
+1. The question
+2. 4 multiple choice options (A, B, C, D)
+3. The correct answer (A, B, C, or D)
+4. A brief explanation
+
+Format as:
+Q1: [question]
+A) [option A]
+B) [option B]
+C) [option C]
+D) [option D]
+Correct: [letter]
+Explanation: [explanation]
+
+Q2: [question]
+..."""
+
+        try:
+            response = self._get_chat_response(prompt)
+            
+            quiz_questions = []
+            current_question = {}
+            lines = response.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('Q') and ':' in line:
+                    if current_question:
+                        quiz_questions.append(current_question)
+                    current_question = {
+                        'question': line.split(':', 1)[1].strip() if ':' in line else line,
+                        'options': {},
+                        'correct': None,
+                        'explanation': ''
+                    }
+                elif line.startswith(('A)', 'B)', 'C)', 'D)')):
+                    option_letter = line[0]
+                    option_text = line[2:].strip() if len(line) > 2 else ""
+                    current_question['options'][option_letter] = option_text
+                elif 'CORRECT:' in line.upper():
+                    correct = line.split(':', 1)[1].strip() if ':' in line else ""
+                    current_question['correct'] = correct.upper()[0] if correct else None
+                elif 'EXPLANATION:' in line.upper():
+                    current_question['explanation'] = line.split(':', 1)[1].strip() if ':' in line else ""
+            
+            if current_question:
+                quiz_questions.append(current_question)
+            
+            return quiz_questions[:num_questions]
+        except Exception as e:
+            print(f"Error generating quiz: {e}")
+            return []
+    
+    def analyze_sentiment(self, text: str) -> Dict:
+        """Analyze document sentiment.
+        
+        Args:
+            text: Document text.
+            
+        Returns:
+            Sentiment analysis result.
+        """
+        sample_text = text[:2000] if len(text) > 2000 else text
+        
+        prompt = f"""Analyze the sentiment of this document:
+
+{sample_text}
+
+Determine:
+1. Overall sentiment: positive, negative, or neutral
+2. Sentiment score: 0-100 (0=very negative, 50=neutral, 100=very positive)
+3. Key emotional themes: what emotions are present?
+
+Format as:
+SENTIMENT: [positive/negative/neutral]
+SCORE: [0-100]
+THEMES: [comma-separated themes]"""
+
+        try:
+            response = self._get_chat_response(prompt)
+            
+            sentiment_result = {
+                "sentiment": "neutral",
+                "score": 50,
+                "themes": []
+            }
+            
+            for line in response.split('\n'):
+                line = line.strip()
+                if 'SENTIMENT:' in line.upper():
+                    sentiment_result["sentiment"] = line.split(':', 1)[1].strip().lower() if ':' in line else "neutral"
+                elif 'SCORE:' in line.upper():
+                    try:
+                        score = int(line.split(':', 1)[1].strip()) if ':' in line else 50
+                        sentiment_result["score"] = max(0, min(100, score))
+                    except:
+                        pass
+                elif 'THEMES:' in line.upper():
+                    themes = line.split(':', 1)[1].strip() if ':' in line else ""
+                    sentiment_result["themes"] = [t.strip() for t in themes.split(',') if t.strip()]
+            
+            return sentiment_result
+        except Exception as e:
+            print(f"Error analyzing sentiment: {e}")
+            return {"sentiment": "neutral", "score": 50, "themes": []}
+    
+    def create_document_heatmap(self, chat_history: List[Dict]) -> Dict:
+        """Create a heatmap showing which document sections are referenced most.
+        
+        Args:
+            chat_history: List of chat messages with sources.
+            
+        Returns:
+            Dictionary with chunk usage statistics.
+        """
+        chunk_usage = {}
+        
+        for message in chat_history:
+            if message.get("role") == "assistant" and message.get("sources"):
+                for source in message["sources"]:
+                    chunk_idx = source.get('chunk_index', 0)
+                    chunk_usage[chunk_idx] = chunk_usage.get(chunk_idx, 0) + 1
+        
+        # Get total chunks
+        total_chunks = getattr(self.vector_store, '_total_chunks', 0)
+        
+        return {
+            "chunk_usage": chunk_usage,
+            "total_chunks": total_chunks,
+            "most_referenced": sorted(chunk_usage.items(), key=lambda x: x[1], reverse=True)[:10] if chunk_usage else []
+        }
