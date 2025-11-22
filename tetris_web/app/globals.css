@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Ghost Cursor Effect */
+.ghost-cursor {
+  position: fixed;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(59, 130, 246, 0.8);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  transition: transform 0.1s ease-out;
+  mix-blend-mode: difference;
+}
+
+.ghost-cursor-trail {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  background: rgba(59, 130, 246, 0.4);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9998;
+  animation: fade-out 0.5s ease-out forwards;
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+    transform: scale(0);
+  }
+}
+
+/* Futuristic Glow Effects */
+.glow-effect {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.5),
+              0 0 40px rgba(59, 130, 246, 0.3),
+              0 0 60px rgba(59, 130, 246, 0.1);
+}
+
+.glow-effect-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5),
+              0 0 40px rgba(34, 197, 94, 0.3);
+}
+
+.glow-effect-purple {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.5),
+              0 0 40px rgba(168, 85, 247, 0.3);
+}
+
+/* Animated Background */
+.animated-bg {
+  background: linear-gradient(
+    -45deg,
+    #0a0a0f,
+    #1a1a2e,
+    #16213e,
+    #0f3460
+  );
+  background-size: 400% 400%;
+  animation: gradient-shift 15s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Grid Pattern */
+.grid-pattern {
+  background-image: 
+    linear-gradient(rgba(59, 130, 246, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 130, 246, 0.1) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Neon Text */
+.neon-text {
+  text-shadow: 
+    0 0 5px currentColor,
+    0 0 10px currentColor,
+    0 0 15px currentColor,
+    0 0 20px currentColor;
+}
+

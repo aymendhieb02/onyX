@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id @default(cuid())
+  username        String   @unique
+  email           String   @unique
+  password        String
+  avatar          String?
+  stats           String   @default("{\"totalScore\":0,\"totalLines\":0,\"totalGames\":0,\"wins\":0,\"losses\":0,\"highestLevel\":1,\"coins\":100,\"xp\":0,\"level\":1,\"rank\":\"Beginner\"}")
+  completedLevels String   @default("[]")
+  unlockedThemes  String   @default("[]")
+  achievements    String   @default("[]")
+  createdAt       DateTime @default(now())
+  lastLoginAt     DateTime @default(now())
+  
+  rooms           Room[]   @relation("RoomHost")
+  roomPlayers     RoomPlayer[]
+}
+
+model Room {
+  id          String       @id @default(cuid())
+  name        String
+  roomCode    String       @unique
+  hostId      String
+  hostUsername String
+  maxPlayers  Int          @default(4)
+  status      String       @default("waiting") // waiting, playing, finished
+  gameMode    String       @default("classic") // classic, sprint, ultra
+  settings    String       @default("{\"speed\":1000,\"garbageLines\":true,\"powerUps\":false}")
+  createdAt   DateTime     @default(now())
+  
+  host        User         @relation("RoomHost", fields: [hostId], references: [id])
+  players     RoomPlayer[]
+  gameSession GameSession?
+  
+  @@index([roomCode])
+  @@map("rooms")
+}
+
+model RoomPlayer {
+  id       String   @id @default(cuid())
+  userId   String?  // Nullable for guest players
+  username String
+  avatar   String?
+  ready    Boolean  @default(false)
+  score    Int      @default(0)
+  lines    Int      @default(0)
+  status   String   @default("alive") // alive, eliminated
+  isGuest  Boolean  @default(false) // true for guest players
+  
+  room     Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId   String
+  user     User?    @relation(fields: [userId], references: [id]) // Optional for guest players
+  
+  @@index([roomId])
+  @@index([userId])
+  @@map("room_players")
+}
+
+model GameSession {
+  id        String   @id @default(cuid())
+  roomId    String   @unique
+  startTime DateTime @default(now())
+  endTime   DateTime?
+  winner    String?
+  results   String?
+  
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  
+  @@map("game_sessions")
+}
+
