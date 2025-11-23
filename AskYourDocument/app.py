@@ -563,15 +563,21 @@ with st.sidebar:
                 st.rerun()
         
         with col2:
-            if st.session_state.chat_history:
-                # Export chat history
-                chat_json = json.dumps(st.session_state.chat_history, indent=2)
-                st.download_button(
-                    label="💾 Export Chat",
-                    data=chat_json,
-                    file_name=f"chat_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json"
-                )
+            if st.session_state.chat_history and len(st.session_state.chat_history) > 0:
+                # Export chat history - wrap in try-except to handle media file storage errors
+                try:
+                    chat_json = json.dumps(st.session_state.chat_history, indent=2)
+                    st.download_button(
+                        label="💾 Export Chat",
+                        data=chat_json,
+                        file_name=f"chat_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                        key=f"export_chat_{len(st.session_state.chat_history)}"  # Unique key to prevent stale references
+                    )
+                except Exception as e:
+                    # Silently handle media file storage errors - they're usually harmless
+                    # The error occurs when Streamlit tries to access old file references
+                    pass
         
         # Show document summary if available
         if 'document_summary' in st.session_state and st.session_state.document_summary:
@@ -722,7 +728,13 @@ if st.session_state.get('show_quiz_history', False):
         else:
             st.info("No quiz history found.")
     else:
-        st.warning("⚠️ MongoDB not connected. Quiz history will not be saved. Please set MONGODB_URI in your .env file.")
+        # Only show warning if MongoDB was attempted but failed
+        # Don't show warning if MongoDB is simply not configured
+        mongodb_uri_set = os.getenv('MONGODB_URI') is not None and os.getenv('MONGODB_URI') != ''
+        if mongodb_uri_set:
+            error_msg = st.session_state.mongodb.connection_error or "Connection failed"
+            st.warning(f"⚠️ MongoDB connection failed. Quiz history will not be saved.\n\n**Error:** {error_msg}\n\nPlease check your MONGODB_URI in the .env file.")
+        # If MONGODB_URI is not set, MongoDB is optional - don't show warning
 
 # Quiz Mode Interface
 elif 'quiz_mode' in st.session_state and st.session_state.quiz_mode and st.session_state.quiz_questions:
@@ -1069,23 +1081,10 @@ else:
         # Clear the query param to avoid reprocessing
         st.query_params.clear()
     
-    # Handle clarification response FIRST (before checking prompt)
-    # This allows us to process the answer even if user_prompt is None after rerun
-    if 'clarification_response' in st.session_state:
-        clarification = st.session_state.clarification_response
-        original_prompt = clarification.get('original_prompt', '')
-        if clarification.get('action') == 'yes':
-            # Rephrase question with clarification
-            prompt = f"{original_prompt} ({clarification.get('question', '')})"
-        else:
-            # Use original prompt as-is
-            prompt = original_prompt
-        del st.session_state.clarification_response
-    else:
-        # Use auto_prompt if available, then voice_text_from_url, then user_prompt
-        prompt = auto_prompt if auto_prompt else (voice_text_from_url if voice_text_from_url else user_prompt)
+    # Use auto_prompt if available, then voice_text_from_url, then user_prompt
+    prompt = auto_prompt if auto_prompt else (voice_text_from_url if voice_text_from_url else user_prompt)
     
-    # Process the question (either from input, auto-question, or clarification response)
+    # Process the question (either from input, auto-question, or voice input)
     if prompt and prompt.strip():  # Ensure prompt is not empty
         # Simple duplicate check: only skip if we JUST processed this exact question
         should_process = True
@@ -1096,8 +1095,7 @@ else:
                 last_msg.get("content") == prompt.strip()):
                 # Check if there's already an assistant response right before it
                 prev_msg = st.session_state.chat_history[-2]
-                if (prev_msg.get("role") == "assistant" and 
-                    'clarification_response' not in st.session_state):
+                if prev_msg.get("role") == "assistant":
                     # Already fully processed, skip to avoid duplicate
                     should_process = False
         
@@ -1153,42 +1151,7 @@ else:
                     elif personality.get('tone') == 'casual' or personality.get('tone') == 'friendly':
                         perspective = "normal"  # Keep normal for casual docs
                 
-                # Check for clarifying questions before answering
-                if 'skip_clarification' not in st.session_state:
-                    all_candidate_chunks = st.session_state.rag_pipeline.vector_store.search(
-                        st.session_state.rag_pipeline._get_embedding(prompt), 
-                        n_results=20
-                    )
-                    clarifying_q = st.session_state.rag_pipeline.ask_clarifying_question(prompt, all_candidate_chunks)
-                    
-                    if clarifying_q:
-                        loading_container.empty()
-                        st.warning(f"💡 **Clarification needed:** {clarifying_q}")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("✅ Yes, that's what I meant", key="clarify_yes"):
-                                # Store clarification response with original prompt
-                                st.session_state.clarification_response = {
-                                    'action': 'yes',
-                                    'question': clarifying_q,
-                                    'original_prompt': prompt  # Store original prompt
-                                }
-                                st.session_state.skip_clarification = True
-                                st.rerun()
-                        with col2:
-                            if st.button("❌ No, answer as is", key="clarify_no"):
-                                st.session_state.clarification_response = {
-                                    'action': 'no',
-                                    'question': clarifying_q,
-                                    'original_prompt': prompt  # Store original prompt
-                                }
-                                st.session_state.skip_clarification = True
-                                st.rerun()
-                        st.stop()
-                
-                # Clear skip flag after use
-                if 'skip_clarification' in st.session_state:
-                    del st.session_state.skip_clarification
+                # Clarification questions removed - proceed directly to answer
                 
                 # Check if document is processed before answering
                 if not st.session_state.get('document_processed', False):
