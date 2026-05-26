@@ -538,7 +538,23 @@ with st.sidebar:
                     
                     # Generate document summary
                     with st.spinner("📝 Generating document summary..."):
-                        st.session_state.document_summary = st.session_state.rag_pipeline.generate_document_summary(text)
+                        try:
+                            st.session_state.document_summary = st.session_state.rag_pipeline.generate_document_summary(text)
+                        except Exception as e:
+                            error_msg = str(e)
+                            if "API_KEY" in error_msg or "not found" in error_msg:
+                                st.session_state.document_summary = {
+                                    "summary": "Summary could not be generated. Please configure your API keys in Streamlit Cloud secrets.",
+                                    "key_points": [],
+                                    "suggested_questions": []
+                                }
+                                st.warning("⚠️ API key not configured. Summary generation requires an API key. See deployment guide for setup instructions.")
+                            else:
+                                st.session_state.document_summary = {
+                                    "summary": f"Summary could not be generated: {error_msg}",
+                                    "key_points": [],
+                                    "suggested_questions": []
+                                }
                 else:
                     st.error(f"❌ {result['message']}")
             except Exception as e:
@@ -583,9 +599,30 @@ with st.sidebar:
         if 'document_summary' in st.session_state and st.session_state.document_summary:
             with st.expander("📋 Document Summary", expanded=True):
                 summary = st.session_state.document_summary
+                summary_text = summary.get('summary', 'No summary available.')
                 
                 st.markdown("### Executive Summary")
-                st.info(summary.get('summary', 'No summary available.'))
+                # Check if summary indicates API key issue
+                if "could not be generated" in summary_text.lower() or "api key" in summary_text.lower():
+                    st.warning(summary_text)
+                    with st.container():
+                        st.markdown("""
+                        **To enable document summaries and quiz generation:**
+                        
+                        1. Go to your Streamlit Cloud app dashboard
+                        2. Click **"Manage app"** (bottom right)
+                        3. Go to **"Secrets"** tab
+                        4. Add your API key:
+                        ```toml
+                        GROQ_API_KEY = "your_key_here"
+                        ```
+                        5. Get a free key at: https://console.groq.com/keys
+                        6. The app will automatically redeploy
+                        
+                        See `DEPLOYMENT.md` for detailed instructions.
+                        """)
+                else:
+                    st.info(summary_text)
                 
                 if summary.get('key_points'):
                     st.markdown("### Key Points")
@@ -667,15 +704,24 @@ with st.sidebar:
                 with col1:
                     if st.button("🎯 Generate Quiz Questions"):
                         with st.spinner("Generating quiz questions..."):
-                            quiz_questions = st.session_state.rag_pipeline.generate_quiz_questions(text, num_questions=5)
-                            if quiz_questions:
-                                # Clear previous quiz state
-                                st.session_state.quiz_mode = True
-                                st.session_state.quiz_questions = quiz_questions
-                                st.session_state.quiz_answers = {}
-                                st.session_state.quiz_submitted = False
-                                st.session_state.current_quiz_id = None
-                                st.rerun()
+                            try:
+                                quiz_questions = st.session_state.rag_pipeline.generate_quiz_questions(text, num_questions=5)
+                                if quiz_questions:
+                                    # Clear previous quiz state
+                                    st.session_state.quiz_mode = True
+                                    st.session_state.quiz_questions = quiz_questions
+                                    st.session_state.quiz_answers = {}
+                                    st.session_state.quiz_submitted = False
+                                    st.session_state.current_quiz_id = None
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Failed to generate quiz questions. Please check your API key configuration in Streamlit Cloud secrets.")
+                            except Exception as e:
+                                error_msg = str(e)
+                                if "API_KEY" in error_msg or "not found" in error_msg:
+                                    st.error("❌ API key not configured. Please set GROQ_API_KEY in Streamlit Cloud secrets. See deployment guide for instructions.")
+                                else:
+                                    st.error(f"❌ Error generating quiz: {error_msg}")
                 with col2:
                     if st.button("📜 Quiz History"):
                         st.session_state.show_quiz_history = True
@@ -929,7 +975,7 @@ else:
                             st.markdown(f'<div class="citation-box">{quote}</div>', unsafe_allow_html=True)
                             
                             # Show full chunk
-                            with st.expander(f"📄 View Full Chunk {source.get('chunk_index', i)}"):
+                            with st.container():
                                 st.text_area(
                                     f"Full text",
                                     source_text,
