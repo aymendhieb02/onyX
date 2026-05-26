@@ -3,12 +3,15 @@
 import os
 import requests
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
 
 from .vector_store import VectorStore
 from .document_processor import chunk_text
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Try to import optional dependencies
 try:
@@ -222,10 +225,13 @@ class RAGPipeline:
 
         Returns:
             The generated response.
+            
+        Raises:
+            ValueError: If API key is not found.
         """
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            return "❌ Error: GROQ_API_KEY not found. Get a free key at https://console.groq.com/keys"
+            raise ValueError("GROQ_API_KEY not found. Please set it in Streamlit Cloud secrets or .env file. Get a free key at https://console.groq.com/keys")
         
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {
@@ -259,10 +265,13 @@ class RAGPipeline:
 
         Returns:
             The generated response.
+            
+        Raises:
+            ValueError: If API key is not found.
         """
         api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
-            return "❌ Error: OPENROUTER_API_KEY not found. Get a free key at https://openrouter.ai/keys"
+            raise ValueError("OPENROUTER_API_KEY not found. Please set it in Streamlit Cloud secrets or .env file. Get a free key at https://openrouter.ai/keys")
         
         url = "https://openrouter.ai/api/v1/chat/completions"
         headers = {
@@ -710,6 +719,14 @@ SUGGESTED QUESTIONS:
         try:
             response = self._get_chat_response(prompt)
             
+            # Check if response is an error
+            if not response or response.startswith("❌ Error"):
+                return {
+                    "summary": "Summary could not be generated. Please check your API key configuration.",
+                    "key_points": [],
+                    "suggested_questions": []
+                }
+            
             # Parse the response
             summary = ""
             key_points = []
@@ -970,6 +987,10 @@ Q2: [question]
         try:
             response = self._get_chat_response(prompt)
             
+            # Check if response is an error
+            if not response or response.startswith("❌ Error"):
+                return []
+            
             quiz_questions = []
             current_question = {}
             lines = response.split('\n')
@@ -999,6 +1020,10 @@ Q2: [question]
                 quiz_questions.append(current_question)
             
             return quiz_questions[:num_questions]
+        except ValueError as e:
+            # API key missing or configuration error
+            print(f"Error generating quiz (API key issue): {e}")
+            return []
         except Exception as e:
             print(f"Error generating quiz: {e}")
             return []

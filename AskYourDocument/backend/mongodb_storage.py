@@ -4,7 +4,6 @@ import os
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime
-from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 import uuid
@@ -14,7 +13,11 @@ logging.getLogger("pymongo").setLevel(logging.CRITICAL)
 logging.getLogger("pymongo.serverSelection").setLevel(logging.CRITICAL)
 logging.getLogger("pymongo.connection").setLevel(logging.CRITICAL)
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Try to import certifi for SSL certificate handling
 try:
