@@ -1,13 +1,28 @@
-"""Vector store operations using ChromaDB."""
+"""Vector store operations with ChromaDB and an in-memory fallback."""
 
 import os
-from typing import List, Dict, Optional
-import chromadb
-from chromadb.config import Settings
+import math
+from typing import List, Dict
+
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMADB_AVAILABLE = True
+    CHROMADB_IMPORT_ERROR = None
+except Exception as exc:
+    chromadb = None
+    Settings = None
+    CHROMADB_AVAILABLE = False
+    CHROMADB_IMPORT_ERROR = exc
 
 
 class VectorStore:
-    """Manages vector storage and retrieval using ChromaDB."""
+    """Manages vector storage and retrieval.
+
+    ChromaDB is used when available. On hosted environments where ChromaDB
+    cannot import cleanly, the app falls back to in-memory cosine search so
+    uploads, Q&A, citations, and quizzes can still work.
+    """
 
     def __init__(self, collection_name: str = "documents"):
         """Initialize the vector store.
@@ -15,6 +30,15 @@ class VectorStore:
         Args:
             collection_name: Name of the ChromaDB collection.
         """
+        self.collection_name = collection_name
+        self._use_chromadb = CHROMADB_AVAILABLE
+        self._memory_documents = []
+        self._total_chunks = 0
+
+        if not self._use_chromadb:
+            print(f"ChromaDB unavailable, using in-memory vector store: {CHROMADB_IMPORT_ERROR}")
+            return
+
         # Create persistent client - use absolute path relative to this file's location
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(current_dir)  # Go up one level from backend/ to AskYourDocument/
@@ -32,7 +56,6 @@ class VectorStore:
                 name=collection_name,
                 metadata={"hnsw:space": "cosine"}
             )
-            self._total_chunks = 0  # Track total chunks for heatmap
         except Exception as e:
             # If there's a connection error (like tenant issues), try to reset the database
             if "tenant" in str(e).lower() or "could not connect" in str(e).lower():
@@ -58,7 +81,8 @@ class VectorStore:
                     metadata={"hnsw:space": "cosine"}
                 )
             else:
-                raise
+                print(f"ChromaDB initialization failed, using in-memory vector store: {e}")
+                self._use_chromadb = False
 
     def add_documents(self, chunks: List[Dict], embeddings: List[List[float]]):
         """Add document chunks with embeddings to the vector store.
@@ -68,6 +92,20 @@ class VectorStore:
             embeddings: List of embedding vectors for each chunk.
         """
         if not chunks or not embeddings:
+            return
+
+        if not self._use_chromadb:
+            for chunk, embedding in zip(chunks, embeddings):
+                self._memory_documents.append({
+                    "text": chunk["text"],
+                    "embedding": embedding,
+                    "metadata": {
+                        "start": chunk["start"],
+                        "end": chunk["end"],
+                        "chunk_index": chunk["chunk_index"]
+                    }
+                })
+            self._total_chunks = len(self._memory_documents)
             return
 
         ids = [f"chunk_{chunk['chunk_index']}" for chunk in chunks]
@@ -87,7 +125,7 @@ class VectorStore:
             documents=texts,
             metadatas=metadatas
         )
-        self._total_chunks = len(chunks)  # Update total chunks count
+        self._total_chunks = self.collection.count()
 
     def search(self, query_embedding: List[float], n_results: int = 3) -> List[Dict]:
         """Search for similar chunks.
@@ -99,6 +137,18 @@ class VectorStore:
         Returns:
             List of dictionaries containing matching chunks and metadata.
         """
+        if not self._use_chromadb:
+            scored_results = []
+            for item in self._memory_documents:
+                similarity = self._cosine_similarity(query_embedding, item["embedding"])
+                scored_results.append({
+                    "text": item["text"],
+                    "metadata": item["metadata"],
+                    "distance": 1 - similarity
+                })
+            scored_results.sort(key=lambda result: result["distance"])
+            return scored_results[:n_results]
+
         # Get collection count to ensure we don't request more than available
         try:
             collection_count = self.collection.count()
@@ -125,6 +175,12 @@ class VectorStore:
 
     def clear(self):
         """Clear all documents from the collection."""
+        self._memory_documents = []
+        self._total_chunks = 0
+
+        if not self._use_chromadb:
+            return
+
         # Delete and recreate collection
         try:
             self.client.delete_collection(name=self.collection.name)
@@ -134,4 +190,20 @@ class VectorStore:
             name=self.collection.name,
             metadata={"hnsw:space": "cosine"}
         )
+
+    @staticmethod
+    def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+        """Return cosine similarity for two embedding vectors."""
+        if not vec_a or not vec_b:
+            return 0.0
+
+        length = min(len(vec_a), len(vec_b))
+        dot_product = sum(vec_a[i] * vec_b[i] for i in range(length))
+        norm_a = math.sqrt(sum(vec_a[i] * vec_a[i] for i in range(length)))
+        norm_b = math.sqrt(sum(vec_b[i] * vec_b[i] for i in range(length)))
+
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+
+        return dot_product / (norm_a * norm_b)
 
