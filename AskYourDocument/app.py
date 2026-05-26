@@ -839,13 +839,14 @@ elif 'quiz_mode' in st.session_state and st.session_state.quiz_mode and st.sessi
                     "total": total,
                     "document_name": document_name
                 }
-                quiz_id = st.session_state.mongodb.save_quiz(quiz_data)
-                
                 st.session_state.quiz_score = score
                 st.session_state.quiz_correct = correct
                 st.session_state.quiz_total = total
                 st.session_state.quiz_submitted = True
-                st.session_state.current_quiz_id = quiz_id
+                try:
+                    st.session_state.current_quiz_id = st.session_state.mongodb.save_quiz(quiz_data)
+                except Exception:
+                    st.session_state.current_quiz_id = None
                 st.rerun()
         
         with col2:
@@ -895,7 +896,7 @@ elif 'quiz_mode' in st.session_state and st.session_state.quiz_mode and st.sessi
         with col2:
             if st.button("📜 View History"):
                 st.session_state.show_quiz_history = True
-            st.rerun()
+                st.rerun()
 
 # Main chat interface
 elif not st.session_state.document_processed:
