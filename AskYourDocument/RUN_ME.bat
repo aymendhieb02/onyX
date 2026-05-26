@@ -6,17 +6,27 @@ echo.
 
 cd /d "%~dp0"
 
+if not exist ".venv\Scripts\python.exe" (
+    echo Virtual environment not found. Creating it now...
+    python -m venv .venv
+    if errorlevel 1 (
+        echo ERROR: Python not found or virtual environment could not be created!
+        pause
+        exit /b 1
+    )
+)
+
 echo Checking Python...
-python --version
+".venv\Scripts\python.exe" --version
 if errorlevel 1 (
-    echo ERROR: Python not found!
+    echo ERROR: Virtual environment Python is not working!
     pause
     exit /b 1
 )
 
 echo.
 echo Installing/updating dependencies...
-python -m pip install -q streamlit requests chromadb python-dotenv sentence-transformers
+".venv\Scripts\python.exe" -m pip install -q -r requirements.txt
 
 echo.
 echo Starting Streamlit app...
@@ -27,7 +37,6 @@ echo.
 echo Press Ctrl+C to stop the app
 echo.
 
-python -m streamlit run app.py
+".venv\Scripts\python.exe" -m streamlit run app.py
 
 pause
-

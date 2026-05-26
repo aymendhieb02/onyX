@@ -26,6 +26,7 @@ chroma_db_backup/
 uploads/
 *.txt
 !requirements.txt
+!runtime.txt
 *.pdf
 
 # OS
