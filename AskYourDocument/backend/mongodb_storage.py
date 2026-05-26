@@ -4,9 +4,17 @@ import os
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
 import uuid
+
+try:
+    from pymongo import MongoClient
+    from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+    HAS_PYMONGO = True
+except ImportError:
+    MongoClient = None
+    ConnectionFailure = Exception
+    ServerSelectionTimeoutError = Exception
+    HAS_PYMONGO = False
 
 # Suppress PyMongo connection warnings and errors
 logging.getLogger("pymongo").setLevel(logging.CRITICAL)
@@ -38,6 +46,12 @@ class MongoDBStorage:
         self.db = None
         self.connection_error = None
         self.connection_failed = False  # Flag to prevent repeated connection attempts
+
+        if not HAS_PYMONGO:
+            self.connection_failed = True
+            self.connection_error = "PyMongo is not installed. Quiz and chat history are disabled."
+            return
+
         # Only try to connect if MONGODB_URI is explicitly set
         # This allows the app to run without MongoDB if not configured
         if self.mongo_uri:
